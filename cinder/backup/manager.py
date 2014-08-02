@@ -43,6 +43,7 @@ from cinder import manager
 from cinder.openstack.common import excutils
 from cinder.openstack.common import importutils
 from cinder.openstack.common import log as logging
+from cinder import quota
 from cinder import utils
 
 LOG = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ mapper = {'cinder.backup.services.swift': 'cinder.backup.drivers.swift',
 
 CONF = cfg.CONF
 CONF.register_opts(backup_manager_opts)
+QUOTAS = quota.QUOTAS
 
 
 class BackupManager(manager.SchedulerDependentManager):
@@ -387,12 +389,15 @@ class BackupManager(manager.SchedulerDependentManager):
         actual_status = backup['status']
         if actual_status != expected_status:
             err = _('Delete_backup aborted, expected backup status '
-                    '%(expected_status)s but got %(actual_status)s.') % {
-                        'expected_status': expected_status,
-                        'actual_status': actual_status,
-                    }
+                    '%(expected_status)s but got %(actual_status)s.') \
+                % {'expected_status': expected_status,
+                   'actual_status': actual_status}
+
+            self.db.backup_update(context, backup_id,
+                                  {'status': 'error', 'fail_reason': err})
             self.db.backup_update(context, backup_id, {'status': 'error',
                                                        'fail_reason': err})
+
             raise exception.InvalidBackup(reason=err)
 
         backup_service = self._map_service_to_driver(backup['service'])
@@ -420,8 +425,27 @@ class BackupManager(manager.SchedulerDependentManager):
                                            'fail_reason':
                                            unicode(err)})
 
+        # Get reservations
+        try:
+            reserve_opts = {
+                'backups': -1,
+                'backup_gigabytes': -backup['size'],
+            }
+            reservations = QUOTAS.reserve(context,
+                                          project_id=backup['project_id'],
+                                          **reserve_opts)
+        except Exception:
+            reservations = None
+            LOG.exception(_("Failed to update usages deleting backup"))
+
         context = context.elevated()
         self.db.backup_destroy(context, backup_id)
+
+        # Commit the reservations
+        if reservations:
+            QUOTAS.commit(context, reservations,
+                          project_id=backup['project_id'])
+
         LOG.info(_('Delete backup finished, backup %s deleted.'), backup_id)
 
     def export_record(self, context, backup_id):
