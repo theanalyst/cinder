@@ -466,7 +466,70 @@ class BackupsAPITestCase(test.TestCase):
         self.assertEqual(res_dict['badRequest']['code'], 400)
         self.assertEqual(res_dict['badRequest']['message'],
                          'Invalid volume: Volume to be backed up must'
-                         ' be available')
+                         ' be available/in-use.')
+
+    def test_create_backup_without_force(self):
+        # need to create the volume referenced below first
+        volume_id = utils.create_volume(self.context, size=5,
+                                        status='in-use')['id']
+        body = {"backup": {"display_name": "nightly001",
+                           "display_description":
+                           "Nightly Backup 03-Sep-2012",
+                           "volume_id": volume_id,
+                           "container": "nightlybackups",
+                           }
+                }
+        req = webob.Request.blank('/v2/fake/backups')
+        req.method = 'POST'
+        req.headers['Content-Type'] = 'application/json'
+        req.body = json.dumps(body)
+        res = req.get_response(fakes.wsgi_app())
+        res_dict = json.loads(res.body)
+
+        self.assertEqual(res.status_int, 400)
+        self.assertEqual(res_dict['badRequest']['code'], 400)
+        self.assertEqual(res_dict['badRequest']['message'],
+                         'Invalid volume: Volume to be backed up is '
+                         'in-use, try forcing.')
+
+    @mock.patch('cinder.db.service_get_all_by_topic')
+    def test_create_backup_force(self, _mock_service_get_all_by_topic):
+        _mock_service_get_all_by_topic.return_value = [
+            {'availability_zone': "fake_az", 'host': 'test_host',
+             'disabled': 0, 'updated_at': timeutils.utcnow()}]
+
+        volume_id = utils.create_volume(self.context, size=5,
+                                        status='in-use')['id']
+        body = {"backup": {"display_name": "nightly001",
+                           "display_description":
+                           "Nightly Backup 03-Sep-2012",
+                           "volume_id": volume_id,
+                           "container": "nightlybackups",
+                           }
+                }
+
+        body = {"backup": {"display_name": "nightly001",
+                           "display_description":
+                           "Nightly Backup 03-Sep-2012",
+                           "volume_id": volume_id,
+                           "container": "nightlybackups",
+                           "force": True,
+                       }
+                }
+        req = webob.Request.blank('/v2/fake/backups')
+        req.method = 'POST'
+        req.headers['Content-Type'] = 'application/json'
+        req.body = json.dumps(body)
+        res = req.get_response(fakes.wsgi_app())
+
+        res_dict = json.loads(res.body)
+        LOG.info(res_dict)
+
+        self.assertEqual(res.status_int, 202)
+        self.assertIn('id', res_dict['backup'])
+        self.assertTrue(_mock_service_get_all_by_topic.called)
+
+        db.volume_destroy(context.get_admin_context(), volume_id)
 
     @mock.patch('cinder.db.service_get_all_by_topic')
     def test_create_backup_WithOUT_enabled_backup_service(
