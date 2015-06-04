@@ -109,10 +109,10 @@ class API(base.Base):
     def _check_volume_availability(self, volume, force):
         """Check if the volume can be used."""
         if volume['status'] not in ['available', 'in-use']:
-            msg = _('Volume status must be available/in-use.')
+            msg = _('Volume to be backed up must be available/in-use.')
             raise exception.InvalidVolume(reason=msg)
         if not force and 'in-use' == volume['status']:
-            msg = _('Volume status is in-use.')
+            msg = _('Volume to be backed up is in-use, try forcing.')
             raise exception.InvalidVolume(reason=msg)
 
     def create(self, context, name, description, volume_id,
