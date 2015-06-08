@@ -289,6 +289,7 @@ class BackupsController(wsgi.Controller):
         context = req.environ['cinder.context']
         restore = body['restore']
         volume_id = restore.get('volume_id', None)
+        name = restore.get('name', None)
 
         LOG.info(_LI("Restoring backup %(backup_id)s to volume %(volume_id)s"),
                  {'backup_id': id, 'volume_id': volume_id},
@@ -297,7 +298,8 @@ class BackupsController(wsgi.Controller):
         try:
             new_restore = self.backup_api.restore(context,
                                                   backup_id=id,
-                                                  volume_id=volume_id)
+                                                  volume_id=volume_id,
+                                                  name=name)
         except exception.InvalidInput as error:
             raise exc.HTTPBadRequest(explanation=error.msg)
         except exception.InvalidVolume as error:
