@@ -126,8 +126,6 @@ class API(base.Base):
         if not self._is_backup_service_enabled(volume, volume_host):
             raise exception.ServiceNotFound(service_id='cinder-backup')
 
-        self.db.volume_update(context, volume_id, {'status': 'backing-up'})
-
         options = {'user_id': context.user_id,
                    'project_id': context.project_id,
                    'display_name': name,

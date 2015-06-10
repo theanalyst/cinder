@@ -226,6 +226,10 @@ class BackupManager(manager.SchedulerDependentManager):
         """Create volume backups using configured backup service."""
         backup = self.db.backup_get(context, backup_id)
         volume_id = backup['volume_id']
+
+        init_vol_status = self.db.volume_get(context, volume_id)['status']
+        self.db.volume_update(context, volume_id, {'status': 'backing-up'})
+
         volume = self.db.volume_get(context, volume_id)
         LOG.info(_('Create backup started, backup: %(backup_id)s '
                    'volume: %(volume_id)s.') %
@@ -256,7 +260,9 @@ class BackupManager(manager.SchedulerDependentManager):
                         'expected_status': expected_status,
                         'actual_status': actual_status,
                     }
-            self.db.volume_update(context, volume_id, {'status': 'available'})
+
+            self.db.volume_update(context, volume_id,
+                                  {'status': init_vol_status})
             self.db.backup_update(context, backup_id, {'status': 'error',
                                                        'fail_reason': err})
             raise exception.InvalidBackup(reason=err)
@@ -274,12 +280,12 @@ class BackupManager(manager.SchedulerDependentManager):
         except Exception as err:
             with excutils.save_and_reraise_exception():
                 self.db.volume_update(context, volume_id,
-                                      {'status': 'available'})
+                                      {'status': init_vol_status})
                 self.db.backup_update(context, backup_id,
                                       {'status': 'error',
                                        'fail_reason': unicode(err)})
 
-        self.db.volume_update(context, volume_id, {'status': 'available'})
+        self.db.volume_update(context, volume_id, {'status': init_vol_status})
         self.db.backup_update(context, backup_id, {'status': 'available',
                                                    'size': volume['size'],
                                                    'availability_zone':
